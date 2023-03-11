@@ -4,6 +4,10 @@
     <string name="save">save</string>
     <string name="reset">reset</string>
     <string name="save_restart">save and restart</string>
+    <string name="add">add</string>
+    <string name="msg_yes_no">Are you sure?</string>
+    <string name="yes">yes</string>
+    <string name="no">no</string>
 
     <string name="settings_dismiss">dismiss</string>
     <string name="settings_general">General</string>
@@ -12,6 +16,7 @@
     <string name="settings_experimental">Experimental</string>
     <string name="settings_logging">Logging</string>
 
+    <string name="version_title">Version</string>
     <string name="about_title">TwiFucker by Nullptr</string>
     <string name="show_toast_title">Show Toast on Start</string>
     <string name="use_legacy_hook">Use legacy hook</string>
@@ -24,10 +29,12 @@
     <string name="disable_topics_to_follow_title">Disable Topics to Follow</string>
     <string name="disable_threads">Disable Threads</string>
     <string name="disable_tweet_detail_related_tweets">Disable Tweet Detail Related Tweets</string>
+    <string name="disable_video_carousel">Disable Video Carousel</string>
     <string name="enable_download_hook">Enable Download Hook</string>
     <string name="disable_url_redirect">Disable URL Redirect</string>
     <string name="hide_drawer_items">Hide drawer items</string>
     <string name="hide_bottom_navbar_items">Hide bottom navigation bar items</string>
+    <string name="feature_switch">Feature switch</string>
     <string name="enable_log">Enable log</string>
     <string name="export_log">Export log</string>
     <string name="export_json_log">Export JSON log</string>
@@ -43,10 +50,12 @@
     <string name="disable_sensitive_media_warning_summary">home/profile timeline and tweet details</string>
     <string name="disable_recommended_users_summary">Don\'t show recommended users after you follow someone</string>
     <string name="disable_threads_summary">Remove live content on top of timeline</string>
+    <string name="disable_video_carousel_summary">Remove video carousel in explore tab</string>
     <string name="enable_download_hook_summary">[Share -> Download or Copy] Tap to download, hold button to copy link</string>
     <string name="disable_url_redirect_summary">Stop t.co url redirection</string>
     <string name="hide_drawer_items_summary">Select drawer item(s) to be hidden</string>
     <string name="hide_bottom_navbar_items_summary">Select bottom navigation bar item(s) to be hidden</string>
+    <string name="feature_switch_summary">Alter the feature flag given by Twitter server (USE AT YOUR OWN RISK!)</string>
     <string name="enable_log_summary">Enable legacy hook for more logging. Log is saved to Android/data/com.twitter.android/cache/twifucker_log</string>
     <string name="export_json_log_summary">Legacy hook is required to be enabled</string>
     <string name="delete_databases_summary">Debug only</string>
@@ -57,10 +66,11 @@
     <string name="downloading">Downloading…</string>
     <string name="download_failed">Download failed</string>
     <string name="download_completed">Download completed</string>
-    <string name="download_copy_failed">Failed to copy file</string>
     <string name="download_all">Download All</string>
 
     <string name="deleted_n_promoted_tweet">Deleted %1$d promoted tweet(s) from app database</string>
     <string name="deleted_n_database">Deleted %1$d database(s)</string>
 
+    <string name="feature_switch_key_hint">feature_flag</string>
+    <string name="feature_switch_value_boolean">Boolean</string>
 </resources>

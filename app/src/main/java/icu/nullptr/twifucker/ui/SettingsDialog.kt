@@ -12,10 +12,12 @@ import android.net.Uri
 import android.os.Bundle
 import android.preference.Preference
 import android.preference.PreferenceFragment
+import android.preference.PreferenceGroup
 import android.preference.SwitchPreference
-import com.github.kyuubiran.ezxhelper.utils.Log
-import com.github.kyuubiran.ezxhelper.utils.addModuleAssetPath
-import com.github.kyuubiran.ezxhelper.utils.restartHostApp
+import com.github.kyuubiran.ezxhelper.AndroidLogger
+import com.github.kyuubiran.ezxhelper.EzXHelper.addModuleAssetPath
+import com.github.kyuubiran.ezxhelper.Log
+import com.github.kyuubiran.ezxhelper.misc.Utils.restartHostApp
 import icu.nullptr.twifucker.*
 import icu.nullptr.twifucker.hook.DrawerNavbarHook.bottomNavbarItems
 import icu.nullptr.twifucker.hook.DrawerNavbarHook.drawerItems
@@ -45,6 +47,8 @@ class SettingsDialog(context: Context) : AlertDialog.Builder(context) {
 
         const val PREF_HIDDEN_DRAWER_ITEMS = "hidden_drawer_items"
         const val PREF_HIDDEN_BOTTOM_NAVBAR_ITEMS = "hidden_bottom_navbar_items"
+        const val PREF_FEATURE_SWITCH = "feature_switch"
+        const val PREF_VERSION = "version"
     }
 
     private fun deleteFromDatabase() {
@@ -64,7 +68,7 @@ class SettingsDialog(context: Context) : AlertDialog.Builder(context) {
             }
         }
         if (count > 0) {
-            Log.toast(context.getString(R.string.deleted_n_promoted_tweet, count))
+            AndroidLogger.toast(context.getString(R.string.deleted_n_promoted_tweet, count))
         }
     }
 
@@ -73,17 +77,35 @@ class SettingsDialog(context: Context) : AlertDialog.Builder(context) {
         @Deprecated("Deprecated in Java")
         override fun onCreate(savedInstanceState: Bundle?) {
             super.onCreate(savedInstanceState)
-            preferenceManager.sharedPreferencesName = PREFS_NAME
             addPreferencesFromResource(R.xml.settings_dialog)
-            prefs = preferenceManager.sharedPreferences
-            findPreference(PREF_HIDE_DRAWER_ITEMS).onPreferenceClickListener = this
-            findPreference(PREF_HIDE_BOTTOM_NAVBAR_ITEMS).onPreferenceClickListener = this
-            findPreference(PREF_ENABLE_LOG).onPreferenceChangeListener = this
-            findPreference(PREF_EXPORT_LOG).onPreferenceClickListener = this
-            findPreference(PREF_EXPORT_JSON_LOG).onPreferenceClickListener = this
-            findPreference(PREF_CLEAR_LOG).onPreferenceClickListener = this
-            findPreference(PREF_DELETE_DATABASES).onPreferenceClickListener = this
-            findPreference(PREF_ABOUT).onPreferenceClickListener = this
+
+            for (i in 0 until preferenceScreen.preferenceCount) {
+                val p = preferenceScreen.getPreference(i)
+                if (p is SwitchPreference) {
+                    if (modulePrefs.containsKey(p.key)) {
+                        p.isChecked = modulePrefs.getBoolean(p.key, false)
+                    }
+                    p.onPreferenceChangeListener = this
+                } else if (p is Preference) {
+                    p.onPreferenceClickListener = this
+                }
+                if (p is PreferenceGroup) {
+                    for (j in 0 until p.preferenceCount) {
+                        val p2 = p.getPreference(j)
+                        if (p2 is SwitchPreference) {
+                            if (modulePrefs.containsKey(p2.key)) {
+                                p2.isChecked = modulePrefs.getBoolean(p2.key, false)
+                            }
+                            p2.onPreferenceChangeListener = this
+                        } else if (p2 is Preference) {
+                            p2.onPreferenceClickListener = this
+                        }
+                    }
+                }
+            }
+
+            findPreference(PREF_VERSION).summary =
+                "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
 
             if (BuildConfig.DEBUG) {
                 findPreference(PREF_DELETE_DATABASES).isEnabled = true
@@ -93,8 +115,9 @@ class SettingsDialog(context: Context) : AlertDialog.Builder(context) {
         @Deprecated("Deprecated in Java")
         override fun onPreferenceChange(p0: Preference?, p1: Any?): Boolean {
             if (p0 is SwitchPreference) {
+                modulePrefs.putBoolean(p0.key, p1 as Boolean)
                 if (p0.key == PREF_ENABLE_LOG) {
-                    if (!(p1 as Boolean)) {
+                    if (!p1) {
                         clearLog()
                     }
                 }
@@ -108,27 +131,37 @@ class SettingsDialog(context: Context) : AlertDialog.Builder(context) {
                 PREF_HIDE_DRAWER_ITEMS -> {
                     onCustomizeHiddenDrawerItems()
                 }
+
                 PREF_HIDE_BOTTOM_NAVBAR_ITEMS -> {
                     onCustomizeHiddenBottomNavbarItems()
                 }
+
                 PREF_EXPORT_LOG -> {
                     exportLog(REQUEST_EXPORT_LOG, logFile.name)
                 }
+
                 PREF_EXPORT_JSON_LOG -> {
                     exportLog(REQUEST_EXPORT_JSON_LOG, logJsonFile.name)
                 }
+
                 PREF_CLEAR_LOG -> {
                     clearLog()
                 }
+
                 PREF_DELETE_DATABASES -> {
                     deleteDatabases()
                 }
+
                 PREF_ABOUT -> {
                     activity.startActivity(
                         Intent(
                             Intent.ACTION_VIEW, Uri.parse("https://github.com/Dr-TSNG/TwiFucker")
                         )
                     )
+                }
+
+                PREF_FEATURE_SWITCH -> {
+                    FeatureSwitchDialog(context)
                 }
             }
             return true
@@ -145,11 +178,13 @@ class SettingsDialog(context: Context) : AlertDialog.Builder(context) {
                                     input.copyTo(out)
                                 }
                             }
+
                             REQUEST_EXPORT_JSON_LOG -> {
                                 logJsonFile.inputStream().use { input ->
                                     input.copyTo(out)
                                 }
                             }
+
                             else -> {}
                         }
                     }
@@ -168,7 +203,7 @@ class SettingsDialog(context: Context) : AlertDialog.Builder(context) {
                 }
             }
             if (count > 0) {
-                Log.toast(context.getString(R.string.deleted_n_database, count))
+                AndroidLogger.toast(context.getString(R.string.deleted_n_database, count))
             }
         }
 
@@ -177,9 +212,11 @@ class SettingsDialog(context: Context) : AlertDialog.Builder(context) {
                 REQUEST_EXPORT_LOG -> {
                     if (!logFile.exists()) return
                 }
+
                 REQUEST_EXPORT_JSON_LOG -> {
                     if (!logJsonFile.exists()) return
                 }
+
                 else -> {
                     return
                 }
@@ -220,10 +257,10 @@ class SettingsDialog(context: Context) : AlertDialog.Builder(context) {
                             hideItems.add(it.key)
                         }
                     }
-                    modulePrefs.edit().putStringSet(PREF_HIDDEN_DRAWER_ITEMS, hideItems).apply()
+                    modulePrefs.putStringSet(PREF_HIDDEN_DRAWER_ITEMS, hideItems)
                 }
                 setNeutralButton(R.string.reset) { _, _ ->
-                    modulePrefs.edit().remove(PREF_HIDDEN_DRAWER_ITEMS).apply()
+                    modulePrefs.remove(PREF_HIDDEN_DRAWER_ITEMS)
                 }
                 setNegativeButton(R.string.settings_dismiss, null)
                 val showings = BooleanArray(items.size) { i ->
@@ -247,11 +284,11 @@ class SettingsDialog(context: Context) : AlertDialog.Builder(context) {
                             hideItems.add(it.key)
                         }
                     }
-                    modulePrefs.edit().putStringSet(PREF_HIDDEN_BOTTOM_NAVBAR_ITEMS, hideItems)
-                        .apply()
+                    modulePrefs.putStringSet(PREF_HIDDEN_BOTTOM_NAVBAR_ITEMS, hideItems)
+
                 }
                 setNeutralButton(R.string.reset) { _, _ ->
-                    modulePrefs.edit().remove(PREF_HIDDEN_BOTTOM_NAVBAR_ITEMS).apply()
+                    modulePrefs.remove(PREF_HIDDEN_BOTTOM_NAVBAR_ITEMS)
                 }
                 setNegativeButton(R.string.settings_dismiss, null)
                 val showings = BooleanArray(items.size) { i ->
@@ -265,7 +302,7 @@ class SettingsDialog(context: Context) : AlertDialog.Builder(context) {
     }
 
     init {
-        context.addModuleAssetPath()
+        addModuleAssetPath(context)
 
         val act = context as Activity
 

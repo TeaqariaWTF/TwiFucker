@@ -2,6 +2,9 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
     <PreferenceCategory android:title="@string/settings_general">
         <Preference
+            android:key="version"
+            android:title="@string/version_title" />
+        <Preference
             android:key="about"
             android:summary="@string/about_summary"
             android:title="@string/about_title" />
@@ -56,6 +59,10 @@
         <SwitchPreference
             android:key="disable_tweet_detail_related_tweets"
             android:title="@string/disable_tweet_detail_related_tweets" />
+        <SwitchPreference
+            android:key="disable_video_carousel"
+            android:summary="@string/disable_video_carousel_summary"
+            android:title="@string/disable_video_carousel" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/settings_experimental">
@@ -75,6 +82,10 @@
             android:key="hide_bottom_navbar_items"
             android:summary="@string/hide_bottom_navbar_items_summary"
             android:title="@string/hide_bottom_navbar_items" />
+        <Preference
+            android:key="feature_switch"
+            android:summary="@string/feature_switch_summary"
+            android:title="@string/feature_switch" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/settings_logging">

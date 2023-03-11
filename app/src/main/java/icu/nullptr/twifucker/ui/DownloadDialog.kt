@@ -10,15 +10,13 @@ import android.content.Context
 import android.content.Context.CLIPBOARD_SERVICE
 import android.media.MediaScannerConnection
 import android.os.Environment
-import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
-import android.widget.ImageButton
-import android.widget.TextView
-import com.github.kyuubiran.ezxhelper.init.InitFields.appContext
-import com.github.kyuubiran.ezxhelper.utils.Log
-import com.github.kyuubiran.ezxhelper.utils.addModuleAssetPath
+import com.github.kyuubiran.ezxhelper.AndroidLogger
+import com.github.kyuubiran.ezxhelper.EzXHelper.addModuleAssetPath
+import com.github.kyuubiran.ezxhelper.EzXHelper.appContext
+import com.github.kyuubiran.ezxhelper.Log
 import icu.nullptr.twifucker.R
 import java.io.File
 import java.io.FileOutputStream
@@ -98,7 +96,7 @@ class DownloadDialog(
                     onDownloadCompleted?.invoke()
                 } catch (t: Throwable) {
                     Log.e(t)
-                    Log.toast(appContext.getString(R.string.download_failed))
+                    AndroidLogger.toast(appContext.getString(R.string.download_failed))
                 }
                 progressDialog.cancel()
             }.start()
@@ -109,7 +107,7 @@ class DownloadDialog(
                 appContext.getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
             val clip = ClipData.newPlainText("label", text)
             clipboardManager.setPrimaryClip(clip)
-            Log.toast(appContext.getString(R.string.download_link_copied))
+            AndroidLogger.toast(appContext.getString(R.string.download_link_copied))
         }
     }
 
@@ -129,26 +127,23 @@ class DownloadDialog(
         }
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
-            val view = convertView ?: LayoutInflater.from(context)
-                .inflate(R.layout.download_item, parent, false).apply {
-                    findViewById<TextView>(R.id.download_item_text).text =
-                        context.getString(R.string.download_media, position + 1)
-                    findViewById<ImageButton>(R.id.download_item_copy).setOnClickListener {
-                        toClipboard(urls[position])
-                    }
-                    findViewById<ImageButton>(R.id.download_item_download).setOnClickListener {
-                        download(context, urls[position]) {
-                            Log.toast(context.getString(R.string.download_completed))
-                        }
+            val view = convertView ?: DownloadItem(context).apply {
+                setTitle(context.getString(R.string.download_media, position + 1))
+                setOnCopy {
+                    toClipboard(urls[position])
+                }
+                setOnDownload {
+                    download(context, urls[position]) {
+                        AndroidLogger.toast(context.getString(R.string.download_completed))
                     }
                 }
+            }
             return view
         }
-
     }
 
     init {
-        context.addModuleAssetPath()
+        addModuleAssetPath(context)
 
         val adapter = DownloadMediaAdapter(context, downloadUrls)
         setAdapter(adapter, null)
@@ -157,7 +152,7 @@ class DownloadDialog(
             downloadUrls.forEachIndexed { i, j ->
                 download(context, j) {
                     if (i == downloadUrls.size - 1) {
-                        Log.toast(context.getString(R.string.download_completed))
+                        AndroidLogger.toast(context.getString(R.string.download_completed))
                     }
                 }
             }

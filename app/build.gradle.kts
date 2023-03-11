@@ -1,19 +1,21 @@
 import org.gradle.internal.os.OperatingSystem
 import java.io.ByteArrayOutputStream
 import java.nio.file.Paths
-import java.util.*
+import java.util.Properties
 
 plugins {
     id("com.android.application")
+    id("org.lsposed.lsparanoid")
+    id("org.lsposed.lsplugin.apktransform")
     kotlin("android")
 }
 
 val properties = Properties()
-properties.load(project.rootProject.file("local.properties").inputStream())
-
-val verName = "1.7"
-val gitCommitCount = "git rev-list HEAD --count".execute().toInt()
-val gitCommitHash = "git rev-parse --verify --short HEAD".execute()
+project.rootProject.file("local.properties").let {
+    if (it.isFile && it.exists()) {
+        properties.load(it.inputStream())
+    }
+}
 
 fun String.execute(currentWorkingDir: File = file("./")): String {
     val byteOut = ByteArrayOutputStream()
@@ -23,6 +25,25 @@ fun String.execute(currentWorkingDir: File = file("./")): String {
         standardOutput = byteOut
     }
     return String(byteOut.toByteArray()).trim()
+}
+
+val verName = "1.9"
+val gitCommitCount = "git rev-list HEAD --count".execute().toInt()
+val gitCommitHash = "git rev-parse --verify --short HEAD".execute()
+
+apktransform {
+    copy { variant ->
+        var suffix = ""
+        if (properties.getProperty("buildWithGitSuffix").toBoolean()) {
+            suffix += ".r${gitCommitCount}.${gitCommitHash}"
+        }
+        file("${variant.name}/TwiFucker-V${verName}${suffix}-${variant.name}.apk")
+    }
+}
+
+lsparanoid {
+    global = true
+    includeDependencies = true
 }
 
 fun findInPath(executable: String): String? {
@@ -36,7 +57,10 @@ fun findInPath(executable: String): String? {
 }
 
 android {
+    namespace = "icu.nullptr.twifucker"
     compileSdk = 33
+    ndkVersion = "25.2.9519653"
+    buildToolsVersion = "33.0.2"
 
     defaultConfig {
         applicationId = "icu.nullptr.twifucker"
@@ -47,6 +71,10 @@ android {
 
         if (properties.getProperty("buildWithGitSuffix").toBoolean()) versionNameSuffix =
             ".r${gitCommitCount}.${gitCommitHash}"
+
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+        }
     }
 
     val config = properties.getProperty("fileDir")?.let {
@@ -66,72 +94,64 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
             )
         }
     }
 
-    androidResources.additionalParameters("--allow-reserved-package-id", "--package-id", "0x64")
+    buildFeatures {
+        prefab = true
+    }
+
+    externalNativeBuild.ndkBuild {
+        path("src/main/cpp/Android.mk")
+    }
+
+    androidResources.additionalParameters += listOf(
+        "--allow-reserved-package-id",
+        "--package-id",
+        "0x64"
+    )
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = "11"
+        jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
     dependenciesInfo {
         includeInApk = false
     }
-
-    buildToolsVersion = "33.0.0"
-    namespace = "icu.nullptr.twifucker"
-}
-
-afterEvaluate {
-    android.applicationVariants.forEach { variant ->
-        val variantCapped = variant.name.capitalize()
-        val packageTask = tasks["package$variantCapped"]
-
-        task<Sync>("build$variantCapped") {
-            dependsOn(packageTask)
-            into("$buildDir/outputs/apk/${variant.name}")
-            from(packageTask.outputs) {
-                include("*.apk")
-                rename(".*\\.apk", "TwiFucker-V${variant.versionName}-${variant.name}.apk")
-            }
-        }
-    }
 }
 
 dependencies {
-    implementation("com.github.kyuubiran:EzXHelper:1.0.3")
     compileOnly("de.robv.android.xposed:api:82")
-
-    implementation("com.github.LuckyPray:DexKit:b289b3e069")
+    implementation("androidx.recyclerview:recyclerview:1.2.1")
+    implementation("com.github.kyuubiran:EzXHelper:2.0.0-RC7")
+    implementation("com.tencent:mmkv:1.2.15")
+    implementation("dev.rikka.ndk.thirdparty:cxx:1.2.0")
+    implementation("dev.rikka.ndk.thirdparty:nativehelper:1.0.0")
+    implementation("org.luckypray:DexKit:1.1.2")
 }
 
 val adbExecutable: String = androidComponents.sdkComponents.adb.get().asFile.absolutePath
 
 val restartTwitter = task("restartTwitter").doLast {
-    exec {
-        commandLine(adbExecutable, "shell", "am", "force-stop", "com.twitter.android")
-    }
-    exec {
-        commandLine(
-            adbExecutable, "shell", "am", "start",
-            "$(pm resolve-activity --components com.twitter.android)"
-        )
+    Runtime.getRuntime().let {
+        it.exec("$adbExecutable shell am force-stop com.twitter.android").waitFor()
+        it.exec("$adbExecutable shell am start $(pm resolve-activity --components com.twitter.android)")
+            .waitFor()
     }
 }
 
-tasks.whenTaskAdded {
-    when (name) {
-        "installDebug" -> {
-            finalizedBy(restartTwitter)
-        }
+afterEvaluate {
+    tasks.named("installDebug") {
+        finalizedBy(restartTwitter)
+    }
+    tasks.named("installRelease") {
+        finalizedBy(restartTwitter)
     }
 }

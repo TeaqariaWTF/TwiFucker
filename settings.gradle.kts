@@ -1,10 +1,9 @@
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
     repositories {
         google()
         mavenCentral()
         maven("https://api.xposed.info/")
-        maven("https://jitpack.io")
     }
 }
 
@@ -15,7 +14,9 @@ pluginManagement {
         mavenCentral()
     }
     plugins {
-        id("org.jetbrains.kotlin.android") version "1.7.10"
+        id("org.jetbrains.kotlin.android") version "1.8.10"
+        id("org.lsposed.lsparanoid") version "0.5.2"
+        id("org.lsposed.lsplugin.apktransform") version "1.2"
     }
 }
 
