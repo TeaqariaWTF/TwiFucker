@@ -9,22 +9,25 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Context.CLIPBOARD_SERVICE
 import android.media.MediaScannerConnection
+import android.net.Uri
 import android.os.Environment
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
+import androidx.documentfile.provider.DocumentFile
 import com.github.kyuubiran.ezxhelper.AndroidLogger
 import com.github.kyuubiran.ezxhelper.EzXHelper.addModuleAssetPath
 import com.github.kyuubiran.ezxhelper.EzXHelper.appContext
 import com.github.kyuubiran.ezxhelper.Log
 import icu.nullptr.twifucker.R
+import icu.nullptr.twifucker.modulePrefs
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
 class DownloadDialog(
-    context: Context, downloadUrls: List<String>, onDismiss: () -> Unit,
+    context: Context, private val tweetId: Long, downloadUrls: List<String>, onDismiss: () -> Unit,
 ) : AlertDialog.Builder(context) {
     companion object {
         private fun contentTypeToExt(contentType: String): String {
@@ -36,6 +39,18 @@ class DownloadDialog(
                 contentType.contains("application/x-mpegURL") -> ".m3u8"
                 else -> ""
             }
+        }
+
+        private fun copyFileUri(
+            context: Context, fileName: String, outputDirectory: String, contentType: String
+        ) {
+            DocumentFile.fromTreeUri(context, Uri.parse(outputDirectory))
+                ?.createFile(contentType, fileName)?.uri?.let { uri2 ->
+                    context.contentResolver.openOutputStream(uri2)?.use { out ->
+                        val inputStream = File(appContext.cacheDir, fileName).inputStream()
+                        inputStream.copyTo(out)
+                    }
+                }
         }
 
         private fun copyFile(fileName: String): String {
@@ -55,7 +70,11 @@ class DownloadDialog(
         }
 
         private fun download(
-            context: Context, url: String, onDownloadCompleted: (() -> Unit)? = null
+            context: Context,
+            tweetId: Long,
+            index: Int,
+            url: String,
+            onDownloadCompleted: (() -> Unit)? = null
         ) {
             val progressDialog = ProgressDialog(context)
             progressDialog.setTitle(R.string.downloading)
@@ -66,14 +85,17 @@ class DownloadDialog(
                 try {
                     val downloadUrl = URL(url)
                     val httpConnection = downloadUrl.openConnection() as HttpURLConnection
+                    httpConnection.connectTimeout = 15000
+                    httpConnection.readTimeout = 15000
                     httpConnection.connect()
                     val inputStream = httpConnection.inputStream
                     val buffer = ByteArray(1024)
                     var len = inputStream.read(buffer)
 
+                    val contentType = httpConnection.contentType
                     val file = File(
                         appContext.cacheDir,
-                        "" + System.currentTimeMillis() + contentTypeToExt(httpConnection.contentType)
+                        "" + tweetId + "_" + index + contentTypeToExt(contentType)
                     )
 
                     val outputStream = FileOutputStream(file)
@@ -86,12 +108,16 @@ class DownloadDialog(
                     inputStream.close()
                     httpConnection.disconnect()
 
-                    val outputPath = copyFile(file.name)
+                    val downloadDirectory = modulePrefs.getString("download_directory", null) ?: ""
+                    if (downloadDirectory != "") {
+                        copyFileUri(context, file.name, downloadDirectory, contentType)
+                    } else {
+                        val outputPath = copyFile(file.name)
+                        MediaScannerConnection.scanFile(
+                            context, arrayOf(outputPath), null, null
+                        )
+                    }
                     file.delete()
-
-                    MediaScannerConnection.scanFile(
-                        context, arrayOf(outputPath), null, null
-                    )
 
                     onDownloadCompleted?.invoke()
                 } catch (t: Throwable) {
@@ -111,8 +137,11 @@ class DownloadDialog(
         }
     }
 
-    private class DownloadMediaAdapter(val context: Context, val urls: List<String>) :
-        BaseAdapter() {
+    private class DownloadMediaAdapter(
+        val context: Context,
+        val tweetId: Long,
+        val urls: List<String>
+    ) : BaseAdapter() {
 
         override fun getCount(): Int {
             return urls.size
@@ -133,7 +162,7 @@ class DownloadDialog(
                     toClipboard(urls[position])
                 }
                 setOnDownload {
-                    download(context, urls[position]) {
+                    download(context, tweetId, position + 1, urls[position]) {
                         AndroidLogger.toast(context.getString(R.string.download_completed))
                     }
                 }
@@ -145,12 +174,12 @@ class DownloadDialog(
     init {
         addModuleAssetPath(context)
 
-        val adapter = DownloadMediaAdapter(context, downloadUrls)
+        val adapter = DownloadMediaAdapter(context, tweetId, downloadUrls)
         setAdapter(adapter, null)
 
         setNeutralButton(R.string.download_all) { _, _ ->
             downloadUrls.forEachIndexed { i, j ->
-                download(context, j) {
+                download(context, tweetId, i + 1, j) {
                     if (i == downloadUrls.size - 1) {
                         AndroidLogger.toast(context.getString(R.string.download_completed))
                     }

@@ -2,7 +2,6 @@ package icu.nullptr.twifucker.hook
 
 import android.os.Bundle
 import android.view.View
-import android.view.ViewGroup
 import android.widget.TextView
 import com.github.kyuubiran.ezxhelper.ClassUtils.loadClass
 import com.github.kyuubiran.ezxhelper.EzXHelper
@@ -13,8 +12,10 @@ import com.github.kyuubiran.ezxhelper.Log
 import com.github.kyuubiran.ezxhelper.MemberExtensions.isNotFinal
 import com.github.kyuubiran.ezxhelper.MemberExtensions.isNotStatic
 import com.github.kyuubiran.ezxhelper.MemberExtensions.isPublic
+import com.github.kyuubiran.ezxhelper.finders.ConstructorFinder
 import com.github.kyuubiran.ezxhelper.finders.FieldFinder
 import com.github.kyuubiran.ezxhelper.finders.MethodFinder
+import dalvik.bytecode.Opcodes
 import de.robv.android.xposed.XposedHelpers
 import icu.nullptr.twifucker.R
 import icu.nullptr.twifucker.beforeMeasure
@@ -35,7 +36,8 @@ object DownloadHook : BaseHook() {
     override val name: String
         get() = "DownloadHook"
 
-    private var downloadUrls: List<String> = listOf()
+    private var cachedTweetId = 0L
+    private var cachedDownloadUrls: List<String> = listOf()
 
     // tweet share download button
     private const val HOOK_TWEET_SHARE_CLASS = "hook_tweet_share_class"
@@ -67,6 +69,7 @@ object DownloadHook : BaseHook() {
 
     // tweet object
     private const val HOOK_TWEET_RESULT_FIELD = "hook_tweet_result_field"
+    private const val HOOK_TWEET_ID_FIELD = "hook_tweet_id_field"
     private const val HOOK_RESULT_FIELD = "hook_result_field"
     private const val HOOK_LEGACY_FIELD = "hook_legacy_field"
     private const val HOOK_EXTENDED_ENTITIES_FIELD = "hook_extended_entities_field"
@@ -103,6 +106,7 @@ object DownloadHook : BaseHook() {
 
     // tweet object
     private lateinit var tweetResultFieldName: String
+    private lateinit var tweetIdFieldName: String
     private lateinit var resultFieldName: String
     private lateinit var legacyFieldName: String
     private lateinit var extendedEntitiesFieldName: String
@@ -129,7 +133,7 @@ object DownloadHook : BaseHook() {
             MethodFinder.fromClass(loadClass(className)).filterByName("onClick").first()
                 .createHook {
                     beforeMeasure(name) { param ->
-                        if (downloadUrls.isEmpty()) return@beforeMeasure
+                        if (cachedTweetId == 0L || cachedDownloadUrls.isEmpty()) return@beforeMeasure
                         val actionItemViewData = XposedHelpers.getObjectField(
                             XposedHelpers.getObjectField(
                                 param.thisObject, shareTweetItemAdapterFieldName
@@ -146,8 +150,9 @@ object DownloadHook : BaseHook() {
 
                         try {
                             currentActivity.get()?.let { act ->
-                                DownloadDialog(act, downloadUrls) {
-                                    downloadUrls = listOf()
+                                DownloadDialog(act, cachedTweetId, cachedDownloadUrls) {
+                                    cachedTweetId = 0L
+                                    cachedDownloadUrls = listOf()
                                 }
                             }
                         } catch (t: Throwable) {
@@ -161,7 +166,7 @@ object DownloadHook : BaseHook() {
         MethodFinder.fromClass(loadClass(protectedShareTweetItemAdapterClassName))
             .filterByName("onClick").first().createHook {
                 beforeMeasure(name) { param ->
-                    if (downloadUrls.isEmpty()) return@beforeMeasure
+                    if (cachedTweetId == 0L || cachedDownloadUrls.isEmpty()) return@beforeMeasure
 
                     val protectedShareTweetItemAdapterTitleTextView = XposedHelpers.getObjectField(
                         param.thisObject, protectedShareTweetItemAdapterClassTitleFieldName
@@ -171,8 +176,9 @@ object DownloadHook : BaseHook() {
 
                     try {
                         currentActivity.get()?.let { act ->
-                            DownloadDialog(act, downloadUrls) {
-                                downloadUrls = listOf()
+                            DownloadDialog(act, cachedTweetId, cachedDownloadUrls) {
+                                cachedTweetId = 0L
+                                cachedDownloadUrls = listOf()
                             }
                         }
                     } catch (t: Throwable) {
@@ -201,14 +207,29 @@ object DownloadHook : BaseHook() {
                     )
                     // drawableRes, actionId, title
                     addModuleAssetPath(appContext)
-                    XposedHelpers.setObjectField(
-                        actionEnumWrapped, actionSheetItemFieldName,
-                        XposedHelpers.newInstance(
-                            actionSheetItemClass,
+                    val buttonConstructor =
+                        ConstructorFinder.fromClass(actionSheetItemClass).filterByParamCount(3)
+                            .filterByParamTypes {
+                                // IILjava/lang/String; or Ljava/lang/String;II
+                                (it[0] == Int::class.java && it[1] == Int::class.java && it[2] == String::class.java) || (it[0] == String::class.java && it[1] == Int::class.java && it[2] == Int::class.java)
+                            }.first()
+                    val dlButton = if (buttonConstructor.parameterTypes[0] == Int::class.java) {
+                        buttonConstructor.newInstance(
                             getId("ic_vector_incoming", "drawable"),
                             0,
                             appContext.getString(R.string.download_or_copy)
-                        ),
+                        )
+                    } else {
+                        buttonConstructor.newInstance(
+                            appContext.getString(R.string.download_or_copy),
+                            getId("ic_vector_incoming", "drawable"),
+                            0
+                        )
+                    }
+
+                    XposedHelpers.setObjectField(
+                        actionEnumWrapped, actionSheetItemFieldName,
+                        dlButton,
                     )
 
                     mutList.add(
@@ -231,7 +252,8 @@ object DownloadHook : BaseHook() {
                     // share_menu_click
                     // share_menu_cancel
                     if (event == "share_menu_cancel") {
-                        downloadUrls = listOf()
+                        cachedTweetId = 0L
+                        cachedDownloadUrls = listOf()
                         return@beforeMeasure
                     }
                     if (event != "share_menu_click") return@beforeMeasure
@@ -239,6 +261,7 @@ object DownloadHook : BaseHook() {
 
                     val tweetResult =
                         XposedHelpers.getObjectField(tweetResults, tweetResultFieldName)
+                    val tweetId = XposedHelpers.getLongField(tweetResult, tweetIdFieldName)
                     val result = XposedHelpers.getObjectField(tweetResult, resultFieldName)
                     val legacy = XposedHelpers.getObjectField(result, legacyFieldName)
                     val extendedEntities =
@@ -274,7 +297,8 @@ object DownloadHook : BaseHook() {
                             }
                         }
                     }
-                    downloadUrls = urls
+                    cachedTweetId = tweetId
+                    cachedDownloadUrls = urls
                 }
             }
     }
@@ -328,6 +352,8 @@ object DownloadHook : BaseHook() {
         // tweet object
         tweetResultFieldName =
             modulePrefs.getString(HOOK_TWEET_RESULT_FIELD, null) ?: throw CachedHookNotFound()
+        tweetIdFieldName =
+            modulePrefs.getString(HOOK_TWEET_ID_FIELD, null) ?: throw CachedHookNotFound()
         resultFieldName =
             modulePrefs.getString(HOOK_RESULT_FIELD, null) ?: throw CachedHookNotFound()
         legacyFieldName =
@@ -381,6 +407,7 @@ object DownloadHook : BaseHook() {
 
             // tweet object
             it.putString(HOOK_TWEET_RESULT_FIELD, tweetResultFieldName)
+            it.putString(HOOK_TWEET_ID_FIELD, tweetIdFieldName)
             it.putString(HOOK_RESULT_FIELD, resultFieldName)
             it.putString(HOOK_LEGACY_FIELD, legacyFieldName)
             it.putString(HOOK_EXTENDED_ENTITIES_FIELD, extendedEntitiesFieldName)
@@ -403,16 +430,16 @@ object DownloadHook : BaseHook() {
             .firstOrNull { it.parameterTypes.size == 2 && it.parameterTypes[1] == Bundle::class.java }?.declaringClass
             ?: throw ClassNotFoundException()
 
+
         val tweetShareShowMethod =
             MethodFinder.fromClass(tweetShareClass).filterPublic().filterFinal()
                 .filterByParamCount(1).filterByReturnType(Void.TYPE).first()
         val tweetShareShareListField =
             FieldFinder.fromClass(tweetShareClass).filterPublic().filterFinal()
                 .filterByType(List::class.java).first()
-
         val actionEnumWrappedClassRefMethod =
             MethodFinder.fromClass(tweetShareClass).filterPublic().filterFinal()
-                .filterByParamTypes { it.size == 4 && it[1] == String::class.java && it[2] == Boolean::class.java && it[3] == String::class.java }
+                .filterByParamTypes { it.size >= 3 && it[1] == String::class.java && it[2] == Boolean::class.java }
                 .first()
         val actionEnumWrappedClass = actionEnumWrappedClassRefMethod.returnType
         val actionEnumWrappedInnerClass = actionEnumWrappedClass.constructors[0].parameterTypes[0]
@@ -448,15 +475,17 @@ object DownloadHook : BaseHook() {
                 val result = dexKit.findMethodInvoking {
                     methodDescriptor = methodDesc.descriptor
                     beInvokedMethodName = "<init>"
-                    beInvokedMethodParameterTypes = arrayOf(
-                        Object::class.java.name, Object::class.java.name, Int::class.java.name
-                    )
+                    beInvokedMethodReturnType = Void.TYPE.name
                 }
-                result.values.firstOrNull()
-            }?.firstOrNull()
+                result.values.firstNotNullOfOrNull { l ->
+                    l.firstOrNull { desc ->
+                        desc.getConstructorInstance(EzXHelper.classLoader).parameterTypes.size == 3
+                    }
+                }
+            } ?: throw ClassNotFoundException()
 
         val shareTweetOnClickListenerClass =
-            shareTweetOnClickListenerConstructorDesc?.getConstructorInstance(EzXHelper.classLoader)?.declaringClass
+            shareTweetOnClickListenerConstructorDesc.getConstructorInstance(EzXHelper.classLoader).declaringClass
                 ?: throw ClassNotFoundException()
         val shareTweetItemAdapterField =
             FieldFinder.fromClass(shareTweetOnClickListenerClass).last()
@@ -481,21 +510,19 @@ object DownloadHook : BaseHook() {
         actionItemViewDataFieldName = actionItemViewDataField.name
 
         // protected tweet share onClick
-        val refMethodDescriptor = dexKit.findMethodUsingString {
-            usingString = "^bceHierarchyContext$"
+        val protectedShareTweetItemAdapterClass = dexKit.findMethodUsingOpPrefixSeq {
+            opSeq = intArrayOf(
+                Opcodes.OP_IGET_OBJECT,
+                Opcodes.OP_IF_EQZ,
+                Opcodes.OP_INVOKE_VIRTUAL,
+                Opcodes.OP_MOVE_RESULT,
+                Opcodes.OP_INVOKE_INTERFACE,
+                Opcodes.OP_RETURN_VOID
+            )
+            methodName = "onClick"
+            methodParamTypes = arrayOf(View::class.java.name)
             methodReturnType = Void.TYPE.name
-        }.firstOrNull {
-            val clazz = it.getMethodInstance(EzXHelper.classLoader).declaringClass
-            clazz?.declaredFields?.any { f -> f.type == View::class.java } ?: false
-        } ?: throw NoSuchMethodError()
-        val refClass = dexKit.findMethodInvoking {
-            methodDescriptor = refMethodDescriptor.descriptor
-            beInvokedMethodName = "<init>"
-        }.firstNotNullOfOrNull {
-            it.value.firstOrNull()?.getConstructorInstance(EzXHelper.classLoader)?.declaringClass
-        } ?: throw ClassNotFoundException()
-        val protectedShareTweetItemAdapterClass = MethodFinder.fromClass(refClass).filterPublic()
-            .filterByParamTypes(ViewGroup::class.java, Int::class.java).first().returnType
+        }.first().getMethodInstance(EzXHelper.classLoader).declaringClass
         val protectedShareTweetItemAdapterClassTitleField =
             FieldFinder.fromClass(protectedShareTweetItemAdapterClass)
                 .filterByType(TextView::class.java).first()
@@ -515,11 +542,30 @@ object DownloadHook : BaseHook() {
         val shareMenuMethod = MethodFinder.fromClass(shareMenuClass).filterByReturnType(Void.TYPE)
             .filterByParamTypes { it.size == 4 && it[0] == String::class.java && it[1] == String::class.java }
             .first()
+        val tweetResultClass = dexKit.findMethodUsingOpPrefixSeq {
+            methodName = "<init>"
+            methodReturnType = Void.TYPE.name
+            opSeq = intArrayOf(
+                Opcodes.OP_INVOKE_DIRECT,
+                Opcodes.OP_IGET_WIDE,
+                Opcodes.OP_IPUT_WIDE,
+                Opcodes.OP_IGET_OBJECT,
+                Opcodes.OP_IPUT_OBJECT,
+                Opcodes.OP_IGET_WIDE,
+                Opcodes.OP_IPUT_WIDE,
+                Opcodes.OP_IGET_WIDE,
+                Opcodes.OP_IPUT_WIDE,
+                Opcodes.OP_IGET_WIDE,
+                Opcodes.OP_IPUT_WIDE,
+                Opcodes.OP_IGET_OBJECT,
+                Opcodes.OP_IPUT_OBJECT,
+            )
+        }.first().getConstructorInstance(EzXHelper.classLoader).declaringClass
         val tweetResultField =
-            FieldFinder.fromClass(shareMenuMethod.parameterTypes[2]).filterPublic().filterFinal()
-                .filter {
-                    type.declaredFields.any { it.type == loadClass("com.twitter.model.vibe.Vibe") }
-                }.first()
+            FieldFinder.fromClass(shareMenuMethod.parameterTypes[2]).filterByType(tweetResultClass)
+                .first()
+        val tweetIdField =
+            tweetResultField.type.declaredFields.first { it.type == Long::class.java }
         val resultField = tweetResultField.type.declaredFields.groupBy { it.type }
             .filter { it.value.size == 2 && it.key.declaredFields.size == 3 }.map { it.value[1] }[0]
             ?: throw NoSuchFieldError()
@@ -552,7 +598,9 @@ object DownloadHook : BaseHook() {
 
         shareMenuClassName = shareMenuClass.name
         shareMenuMethodName = shareMenuMethod.name
+
         tweetResultFieldName = tweetResultField.name
+        tweetIdFieldName = tweetIdField.name
         resultFieldName = resultField.name
         legacyFieldName = legacyField.name
         extendedEntitiesFieldName = extendedEntitiesField.name
