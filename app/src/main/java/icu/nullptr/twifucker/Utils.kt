@@ -80,7 +80,8 @@ fun writeJsonLog(content: String) {
 
 fun isEntryNeedsRemove(entryId: String): Boolean {
     // promoted tweet
-    if (entryId.startsWith("promotedTweet-") && modulePrefs.getBoolean(
+    // "superhero-superhero" == promoted trend
+    if ((entryId.startsWith("promotedTweet-") || entryId.startsWith("superhero-")) && modulePrefs.getBoolean(
             "disable_promoted_content", true
         )
     ) {
@@ -93,6 +94,10 @@ fun isEntryNeedsRemove(entryId: String): Boolean {
             "disable_who_to_follow", false
         )
     ) {
+        return true
+    }
+    // who to subscribe (a.k.a. Creators for you) module
+    if (entryId.startsWith("who-to-subscribe-") && modulePrefs.getBoolean("disable_who_to_subscribe", false)) {
         return true
     }
     // topics to follow module
